@@ -9,11 +9,11 @@
 <style>
   :root{
     --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e8eaf0; --muted:#8b93a7;
-    --accent:#3ddc97; --accent-ink:#06210f; --warn:#ffb547; --bad:#ff6b6b;
+    --accent:#3ddc97; --accent-ink:#06210f; --blue:#5aa9ff; --warn:#ffb547; --bad:#ff6b6b;
   }
   @media (prefers-color-scheme: light){
     :root{ --bg:#f4f5f8; --card:#fff; --line:#dcdfe6; --text:#14161c; --muted:#5d6577;
-           --accent:#12a86b; --accent-ink:#fff; --warn:#b26b00; --bad:#c62828; }
+           --accent:#12a86b; --accent-ink:#fff; --blue:#1f6fd1; --warn:#b26b00; --bad:#c62828; }
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
@@ -26,29 +26,29 @@
   .pill.on{color:var(--accent);border-color:var(--accent)}
   .pill.busy{color:var(--warn);border-color:var(--warn)}
   .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
-  label{display:block;font-size:14px;color:var(--muted);margin:0 0 6px}
-  .hint{font-size:12px}
-  input[type=text],input[type=password],select{
+  textarea,select{
     width:100%;padding:13px 12px;font-size:17px;border-radius:10px;border:1px solid var(--line);
-    background:var(--bg);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+    background:var(--bg);color:var(--text)}
+  textarea{min-height:110px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
   select{font-family:inherit;font-size:16px}
-  .field{margin-bottom:14px}
-  .pw{display:flex;gap:8px}
-  .pw input{flex:1;min-width:0}
-  button{font:inherit;border-radius:10px;border:1px solid var(--line);background:var(--card);
-         color:var(--text);padding:13px 14px;cursor:pointer}
-  button:active{transform:scale(.98)}
+  button,.btn{font:inherit;border-radius:10px;border:1px solid var(--line);background:var(--card);
+         color:var(--text);padding:14px;cursor:pointer;display:block;width:100%;text-align:center;text-decoration:none}
+  button:active,.btn:active{transform:scale(.98)}
   button:disabled{opacity:.45}
-  .primary{width:100%;background:var(--accent);color:var(--accent-ink);border:0;font-weight:650;font-size:17px;padding:16px}
-  .wide{width:100%}
-  .row{display:flex;gap:10px;align-items:center;margin:12px 0}
-  .row label{margin:0;color:var(--text);font-size:15px;display:flex;align-items:center;gap:8px}
+  .primary{background:var(--accent);color:var(--accent-ink);border:0;font-weight:650;font-size:17px;padding:16px}
+  .clip{border:2px solid var(--accent);color:var(--accent);font-weight:650;font-size:17px;padding:16px}
+  .itg{border-color:var(--blue);color:var(--blue);font-weight:600}
+  .gap{height:10px}
+  .divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;margin:16px 0}
+  .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+  .row{display:flex;gap:10px;align-items:center;margin:12px 0 0}
+  .row label{color:var(--text);font-size:15px;display:flex;align-items:center;gap:8px;white-space:nowrap}
   .row input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent)}
   .row select{flex:1}
-  #warn{color:var(--warn);font-size:14px;margin:8px 0 0;min-height:0}
+  #warn{color:var(--warn);font-size:14px;margin:8px 0 0}
   #status{text-align:center;color:var(--muted);font-size:15px;min-height:22px;margin:12px 0 0}
   #status.ok{color:var(--accent)} #status.bad{color:var(--bad)}
-  .stop{width:100%;margin-top:10px;border-color:var(--bad);color:var(--bad)}
+  .stop{margin-top:10px;border-color:var(--bad);color:var(--bad)}
   .note{font-size:13px;color:var(--muted);text-align:center}
   .unsupported{border-color:var(--warn)}
   [hidden]{display:none!important}
@@ -70,43 +70,42 @@
 
   <button id="connectBtn" class="primary">Connect to KeyBridge</button>
 
-  <div id="panel" class="card" style="margin-top:14px" hidden>
-    <div class="field">
-      <label for="user">Username <span class="hint">— optional; types username, Tab, password</span></label>
-      <input id="user" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
-    </div>
+  <div id="panel" hidden style="margin-top:14px">
+    <div class="card">
+      <button id="clipBtn" class="clip" type="button">Send clipboard</button>
 
-    <div class="field">
-      <label for="secret">Password or text</label>
-      <div class="pw">
-        <input id="secret" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
-        <button id="eyeBtn" type="button" aria-label="Show">Show</button>
-      </div>
+      <div class="divider">or</div>
+
+      <textarea id="text" placeholder="Type here" autocomplete="off" autocapitalize="off"
+                autocorrect="off" spellcheck="false"></textarea>
       <div id="warn"></div>
-    </div>
+      <div class="gap"></div>
+      <button id="sendBtn" class="primary" type="button">Send</button>
 
-    <button id="pasteBtn" class="wide" type="button">Paste from clipboard</button>
+      <div class="row">
+        <label><input id="enter" type="checkbox"> Press Enter after</label>
+      </div>
+      <div class="row">
+        <label for="speed">Speed</label>
+        <select id="speed">
+          <option value="4">Fast</option>
+          <option value="10" selected>Normal</option>
+          <option value="30">Slow — BIOS / KVM / iDRAC / iLO</option>
+        </select>
+      </div>
 
-    <div class="row">
-      <label><input id="enter" type="checkbox" checked> Press Enter after</label>
+      <button id="stopBtn" class="stop" type="button" hidden>Stop typing</button>
     </div>
-    <div class="row">
-      <label for="speed" style="white-space:nowrap">Speed</label>
-      <select id="speed">
-        <option value="4">Fast</option>
-        <option value="10" selected>Normal</option>
-        <option value="30">Slow — BIOS / KVM / iDRAC / iLO</option>
-      </select>
-    </div>
-
-    <button id="sendBtn" class="primary">Type it</button>
-    <button id="stopBtn" class="stop" hidden>Stop typing</button>
   </div>
 
   <p id="status"></p>
-  <p class="note">Click into the target field on the computer first, then tap <b>Type it</b>.</p>
 
-  <details id="logBox" style="margin-top:18px">
+  <div class="gap"></div>
+  <a class="btn itg" href="https://app.itglue.com" target="_blank" rel="noopener">Open IT Glue</a>
+
+  <p class="note" style="margin-top:16px">Click into the target field on the computer first, then send.</p>
+
+  <details style="margin-top:18px">
     <summary class="note" style="text-align:left;cursor:pointer">Connection log</summary>
     <pre id="log" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:8px 0 0"></pre>
   </details>
@@ -120,9 +119,11 @@
   const STATUS  = '7b1a0003-5c3e-4d2a-9f4e-2b6c8d0e1f01';
   const OP = { BEGIN: 1, DATA: 2, COMMIT: 3, CANCEL: 4 };
   const CHUNK = 19;            // 20-byte default BLE payload minus 1 opcode byte
+  const MAX_LEN = 2048;
 
   const $ = id => document.getElementById(id);
   let device = null, cmdChar = null, statusChar = null, sending = false;
+  let chunkSize = CHUNK;       // shrinks automatically if KeyBridge rejects large writes
 
   if (!navigator.bluetooth) {
     $('unsupported').hidden = false;
@@ -133,16 +134,18 @@
   function setStatus(text, cls) { const s = $('status'); s.textContent = text; s.className = cls || ''; }
   const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-  async function write(bytes) {
-    await cmdChar.writeValueWithResponse(new Uint8Array(bytes));
-  }
-
   const t0 = Date.now();
   function log(msg) {
     const line = `[${((Date.now() - t0) / 1000).toFixed(1)}s] ${msg}`;
     $('log').textContent += line + '\n';
     console.log(line);
   }
+
+  async function write(bytes) {
+    await cmdChar.writeValueWithResponse(new Uint8Array(bytes));
+  }
+
+  // ---------- connection & pairing ----------
 
   // First encrypted write triggers the OS pairing prompt (PIN). Retry while the tech enters it.
   async function ensurePaired() {
@@ -216,85 +219,106 @@
     $('connectBtn').textContent = 'Reconnect';
     $('stopBtn').hidden = true;
     sending = false;
+    setButtons(true);
   }
 
   function onStatus(ev) {
     const msg = new TextDecoder().decode(ev.target.value);
-    if (msg === 'TYPING')      { setStatus('Typing…'); $('stopBtn').hidden = false; }
-    else if (msg === 'DONE')   { setStatus('Typed ✓', 'ok'); $('stopBtn').hidden = true; }
+    if (msg === 'TYPING')         { setStatus('Typing…'); $('stopBtn').hidden = false; }
+    else if (msg === 'DONE')      { setStatus('Typed ✓', 'ok'); $('stopBtn').hidden = true; }
     else if (msg === 'CANCELLED') { setStatus('Stopped.', 'bad'); $('stopBtn').hidden = true; }
-    else if (msg === 'BUSY')   { setStatus('Still typing the last one — wait or stop it.', 'bad'); }
+    else if (msg === 'BUSY')      { setStatus('Still typing the last one — wait or stop it.', 'bad'); }
     else if (msg.startsWith('ERR:')) { setStatus('Error: ' + msg.slice(4), 'bad'); $('stopBtn').hidden = true; }
   }
 
-  function badChars(s) {
-    return [...new Set([...s].filter(c => !(c === '\t' || c === '\n' || (c >= ' ' && c <= '~'))))];
+  // ---------- sending ----------
+
+  const isTypeable = c => c === '\t' || c === '\n' || (c >= ' ' && c <= '~');
+
+  function setButtons(enabled) {
+    $('sendBtn').disabled = !enabled;
+    $('clipBtn').disabled = !enabled;
   }
 
-  function checkWarn() {
-    const bad = badChars($('user').value + $('secret').value);
-    $('warn').textContent = bad.length
-      ? 'These characters can\'t be typed and will be skipped: ' + bad.map(c => JSON.stringify(c)).join(' ')
-      : '';
-  }
+  // Sends text to KeyBridge. Returns true on success.
+  async function sendText(raw) {
+    if (sending || !cmdChar) return false;
 
-  async function send() {
-    if (sending || !cmdChar) return;
-    const user = $('user').value, secret = $('secret').value;
-    if (!secret && !user) { setStatus('Nothing to type.', 'bad'); return; }
-
-    let payload = user ? user + '\t' + secret : secret;
+    let payload = raw.replace(/\r\n?/g, '\n');
     if ($('enter').checked) payload += '\n';
-    payload = [...payload].filter(c => c === '\t' || c === '\n' || (c >= ' ' && c <= '~')).join('');
-    if (payload.length > 2048) { setStatus('Too long (2048 max).', 'bad'); return; }
+    const skipped = [...new Set([...payload].filter(c => !isTypeable(c)))];
+    payload = [...payload].filter(isTypeable).join('');
+
+    if (!payload) { setStatus('Nothing to type.', 'bad'); return false; }
+    if (payload.length > MAX_LEN) { setStatus(`Too long (${MAX_LEN} max).`, 'bad'); return false; }
 
     const bytes = new TextEncoder().encode(payload);   // ASCII only, so 1 byte per char
     const speed = parseInt($('speed').value, 10);
 
-    sending = true; $('sendBtn').disabled = true;
+    sending = true; setButtons(false);
     setStatus('Sending…');
     try {
+      log(`send: ${bytes.length} chars, chunk size ${chunkSize}`);
       await write([OP.BEGIN]);
-      for (let i = 0; i < bytes.length; i += CHUNK) {
-        await write([OP.DATA, ...bytes.subarray(i, i + CHUNK)]);
+      let i = 0;
+      while (i < bytes.length) {
+        const piece = bytes.subarray(i, i + chunkSize);
+        try {
+          await write([OP.DATA, ...piece]);
+          i += piece.length;
+        } catch (e) {
+          log(`DATA write of ${piece.length + 1} bytes failed: ${e.name}: ${e.message}`);
+          if (!device || !device.gatt.connected) throw new Error('KeyBridge disconnected');
+          if (chunkSize === 1) throw e;
+          chunkSize = Math.max(1, Math.floor(chunkSize / 2));
+          log(`retrying with chunk size ${chunkSize}`);
+          await sleep(200);
+        }
       }
       await write([OP.COMMIT, speed]);
+      log('sent OK');
       bytes.fill(0);
-      $('user').value = ''; $('secret').value = ''; checkWarn();
-      if (!statusChar || $('status').textContent === 'Sending…') setStatus('Sent.');
+      if ($('status').textContent === 'Sending…') setStatus('Sent.', 'ok');
+      $('warn').textContent = skipped.length
+        ? 'Skipped characters that can\'t be typed: ' + skipped.map(c => JSON.stringify(c)).join(' ')
+        : '';
+      return true;
     } catch (e) {
-      setStatus('Send failed: ' + (e.message || e), 'bad');
+      log(`send failed: ${e.name}: ${e.message}`);
+      setStatus('Send failed: ' + (e.message || e) + ' — open Connection log for details.', 'bad');
+      return false;
     } finally {
-      sending = false; $('sendBtn').disabled = false;
+      sending = false; setButtons(true);
     }
+  }
+
+  async function sendTyped() {
+    const ok = await sendText($('text').value);
+    if (ok) $('text').value = '';
+  }
+
+  async function sendClipboard() {
+    let t;
+    try {
+      t = await navigator.clipboard.readText();
+    } catch (e) {
+      setStatus('Clipboard access blocked — allow it for this site in Chrome, or paste into the box instead.', 'bad');
+      return;
+    }
+    t = t.replace(/[\r\n]+$/, '');   // drop trailing newline that some apps add when copying
+    if (!t) { setStatus('Clipboard is empty.', 'bad'); return; }
+    await sendText(t);
+    t = '';
   }
 
   async function stop() {
     try { await write([OP.CANCEL]); } catch (e) {}
   }
 
-  async function paste() {
-    try {
-      const t = await navigator.clipboard.readText();
-      $('secret').value = t.replace(/[\r\n]+$/, '');
-      checkWarn();
-      setStatus('Pasted.');
-    } catch (e) {
-      setStatus('Clipboard blocked — long-press the field and paste instead.', 'bad');
-    }
-  }
-
   $('connectBtn').addEventListener('click', connect);
-  $('sendBtn').addEventListener('click', send);
+  $('clipBtn').addEventListener('click', sendClipboard);
+  $('sendBtn').addEventListener('click', sendTyped);
   $('stopBtn').addEventListener('click', stop);
-  $('pasteBtn').addEventListener('click', paste);
-  $('user').addEventListener('input', checkWarn);
-  $('secret').addEventListener('input', checkWarn);
-  $('eyeBtn').addEventListener('click', () => {
-    const f = $('secret'), show = f.type === 'password';
-    f.type = show ? 'text' : 'password';
-    $('eyeBtn').textContent = show ? 'Hide' : 'Show';
-  });
 })();
 </script>
 </body>
