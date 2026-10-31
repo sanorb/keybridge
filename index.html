@@ -101,10 +101,15 @@
 
     <button id="sendBtn" class="primary">Type it</button>
     <button id="stopBtn" class="stop" hidden>Stop typing</button>
-    <p id="status"></p>
   </div>
 
+  <p id="status"></p>
   <p class="note">Click into the target field on the computer first, then tap <b>Type it</b>.</p>
+
+  <details id="logBox" style="margin-top:18px">
+    <summary class="note" style="text-align:left;cursor:pointer">Connection log</summary>
+    <pre id="log" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:8px 0 0"></pre>
+  </details>
 </main>
 
 <script>
@@ -132,16 +137,26 @@
     await cmdChar.writeValueWithResponse(new Uint8Array(bytes));
   }
 
+  const t0 = Date.now();
+  function log(msg) {
+    const line = `[${((Date.now() - t0) / 1000).toFixed(1)}s] ${msg}`;
+    $('log').textContent += line + '\n';
+    console.log(line);
+  }
+
   // First encrypted write triggers the OS pairing prompt (PIN). Retry while the tech enters it.
   async function ensurePaired() {
     const deadline = Date.now() + 60000;
-    let prompted = false;
+    let attempt = 0;
     while (true) {
-      try { await write([OP.CANCEL]); return; }
+      attempt++;
+      log(`secure write attempt ${attempt}…`);
+      try { await write([OP.CANCEL]); log('secure write OK — paired'); return; }
       catch (e) {
-        if (!device.gatt.connected) throw e;
+        log(`secure write failed: ${e.name}: ${e.message}`);
+        if (!device.gatt.connected) throw new Error('KeyBridge dropped the connection during pairing');
         if (Date.now() > deadline) throw new Error('Pairing timed out');
-        if (!prompted) { setStatus('Enter the KeyBridge PIN if your phone asks for it…'); prompted = true; }
+        setStatus('Enter the KeyBridge PIN if asked — check your notification shade for a pairing request.');
         await sleep(1500);
       }
     }
@@ -150,35 +165,50 @@
   async function connect() {
     try {
       if (!device) {
+        log('opening device picker');
         device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE] }] });
         device.addEventListener('gattserverdisconnected', onDisconnected);
+        log(`picked: ${device.name || '(no name)'}`);
       }
       setConn('Connecting…', 'busy');
+      setStatus('Connecting…');
       $('connectBtn').disabled = true;
+
+      log('gatt.connect…');
       const server = await device.gatt.connect();
+      log('connected; getting service…');
       const svc = await server.getPrimaryService(SERVICE);
+      log('service OK; getting characteristics…');
       cmdChar = await svc.getCharacteristic(CMD);
       statusChar = await svc.getCharacteristic(STATUS);
+      log('characteristics OK; pairing…');
 
       await ensurePaired();
 
       try {
         await statusChar.startNotifications();
         statusChar.addEventListener('characteristicvaluechanged', onStatus);
-      } catch (e) { /* typing still works without status updates */ }
+        log('status notifications on');
+      } catch (e) { log(`notifications unavailable: ${e.message}`); }
 
       setConn('Connected', 'on');
       setStatus('Ready.');
       $('connectBtn').hidden = true;
       $('panel').hidden = false;
     } catch (e) {
-      if (e.name === 'NotFoundError') { setConn('Disconnected'); setStatus(''); }
-      else { setConn('Disconnected'); setStatus(e.message || 'Could not connect', 'bad'); }
+      log(`connect failed: ${e.name}: ${e.message}`);
+      setConn('Disconnected');
+      if (e.name === 'NotFoundError') setStatus('');
+      else setStatus((e.message || 'Could not connect') + ' — tap Connect to try again.', 'bad');
+      try { if (device && device.gatt.connected) device.gatt.disconnect(); } catch (_) {}
+      device = null;   // next tap reopens the picker for a clean start
       $('connectBtn').disabled = false;
+      $('connectBtn').textContent = 'Connect to KeyBridge';
     }
   }
 
   function onDisconnected() {
+    log('disconnected');
     setConn('Disconnected');
     $('panel').hidden = true;
     $('connectBtn').hidden = false;
