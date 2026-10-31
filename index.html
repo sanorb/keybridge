@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1115">
+<meta name="robots" content="noindex">
+<title>KeyBridge</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e8eaf0; --muted:#8b93a7;
+    --accent:#3ddc97; --accent-ink:#06210f; --warn:#ffb547; --bad:#ff6b6b;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f4f5f8; --card:#fff; --line:#dcdfe6; --text:#14161c; --muted:#5d6577;
+           --accent:#12a86b; --accent-ink:#fff; --warn:#b26b00; --bad:#c62828; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+       -webkit-tap-highlight-color:transparent}
+  main{max-width:460px;margin:0 auto;padding:20px 16px 40px}
+  header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  h1{font-size:20px;margin:0;letter-spacing:.2px}
+  .pill{font-size:13px;padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+  .pill.on{color:var(--accent);border-color:var(--accent)}
+  .pill.busy{color:var(--warn);border-color:var(--warn)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  label{display:block;font-size:14px;color:var(--muted);margin:0 0 6px}
+  .hint{font-size:12px}
+  input[type=text],input[type=password],select{
+    width:100%;padding:13px 12px;font-size:17px;border-radius:10px;border:1px solid var(--line);
+    background:var(--bg);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  select{font-family:inherit;font-size:16px}
+  .field{margin-bottom:14px}
+  .pw{display:flex;gap:8px}
+  .pw input{flex:1;min-width:0}
+  button{font:inherit;border-radius:10px;border:1px solid var(--line);background:var(--card);
+         color:var(--text);padding:13px 14px;cursor:pointer}
+  button:active{transform:scale(.98)}
+  button:disabled{opacity:.45}
+  .primary{width:100%;background:var(--accent);color:var(--accent-ink);border:0;font-weight:650;font-size:17px;padding:16px}
+  .wide{width:100%}
+  .row{display:flex;gap:10px;align-items:center;margin:12px 0}
+  .row label{margin:0;color:var(--text);font-size:15px;display:flex;align-items:center;gap:8px}
+  .row input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent)}
+  .row select{flex:1}
+  #warn{color:var(--warn);font-size:14px;margin:8px 0 0;min-height:0}
+  #status{text-align:center;color:var(--muted);font-size:15px;min-height:22px;margin:12px 0 0}
+  #status.ok{color:var(--accent)} #status.bad{color:var(--bad)}
+  .stop{width:100%;margin-top:10px;border-color:var(--bad);color:var(--bad)}
+  .note{font-size:13px;color:var(--muted);text-align:center}
+  .unsupported{border-color:var(--warn)}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>KeyBridge</h1>
+    <span id="conn" class="pill">Disconnected</span>
+  </header>
+
+  <div id="unsupported" class="card unsupported" hidden>
+    <strong>Web Bluetooth isn't available in this browser.</strong>
+    <p class="note" style="text-align:left">Android: open this page in Chrome.<br>
+    iPhone: open this page in the Bluefy browser (App Store).<br>
+    The page must be loaded over https.</p>
+  </div>
+
+  <button id="connectBtn" class="primary">Connect to KeyBridge</button>
+
+  <div id="panel" class="card" style="margin-top:14px" hidden>
+    <div class="field">
+      <label for="user">Username <span class="hint">— optional; types username, Tab, password</span></label>
+      <input id="user" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+    </div>
+
+    <div class="field">
+      <label for="secret">Password or text</label>
+      <div class="pw">
+        <input id="secret" type="password" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <button id="eyeBtn" type="button" aria-label="Show">Show</button>
+      </div>
+      <div id="warn"></div>
+    </div>
+
+    <button id="pasteBtn" class="wide" type="button">Paste from clipboard</button>
+
+    <div class="row">
+      <label><input id="enter" type="checkbox" checked> Press Enter after</label>
+    </div>
+    <div class="row">
+      <label for="speed" style="white-space:nowrap">Speed</label>
+      <select id="speed">
+        <option value="4">Fast</option>
+        <option value="10" selected>Normal</option>
+        <option value="30">Slow — BIOS / KVM / iDRAC / iLO</option>
+      </select>
+    </div>
+
+    <button id="sendBtn" class="primary">Type it</button>
+    <button id="stopBtn" class="stop" hidden>Stop typing</button>
+    <p id="status"></p>
+  </div>
+
+  <p class="note">Click into the target field on the computer first, then tap <b>Type it</b>.</p>
+</main>
+
+<script>
+(() => {
+  // Must match KeyBridge.ino
+  const SERVICE = '7b1a0001-5c3e-4d2a-9f4e-2b6c8d0e1f01';
+  const CMD     = '7b1a0002-5c3e-4d2a-9f4e-2b6c8d0e1f01';
+  const STATUS  = '7b1a0003-5c3e-4d2a-9f4e-2b6c8d0e1f01';
+  const OP = { BEGIN: 1, DATA: 2, COMMIT: 3, CANCEL: 4 };
+  const CHUNK = 19;            // 20-byte default BLE payload minus 1 opcode byte
+
+  const $ = id => document.getElementById(id);
+  let device = null, cmdChar = null, statusChar = null, sending = false;
+
+  if (!navigator.bluetooth) {
+    $('unsupported').hidden = false;
+    $('connectBtn').disabled = true;
+  }
+
+  function setConn(text, cls) { const p = $('conn'); p.textContent = text; p.className = 'pill ' + (cls || ''); }
+  function setStatus(text, cls) { const s = $('status'); s.textContent = text; s.className = cls || ''; }
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  async function write(bytes) {
+    await cmdChar.writeValueWithResponse(new Uint8Array(bytes));
+  }
+
+  // First encrypted write triggers the OS pairing prompt (PIN). Retry while the tech enters it.
+  async function ensurePaired() {
+    const deadline = Date.now() + 60000;
+    let prompted = false;
+    while (true) {
+      try { await write([OP.CANCEL]); return; }
+      catch (e) {
+        if (!device.gatt.connected) throw e;
+        if (Date.now() > deadline) throw new Error('Pairing timed out');
+        if (!prompted) { setStatus('Enter the KeyBridge PIN if your phone asks for it…'); prompted = true; }
+        await sleep(1500);
+      }
+    }
+  }
+
+  async function connect() {
+    try {
+      if (!device) {
+        device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE] }] });
+        device.addEventListener('gattserverdisconnected', onDisconnected);
+      }
+      setConn('Connecting…', 'busy');
+      $('connectBtn').disabled = true;
+      const server = await device.gatt.connect();
+      const svc = await server.getPrimaryService(SERVICE);
+      cmdChar = await svc.getCharacteristic(CMD);
+      statusChar = await svc.getCharacteristic(STATUS);
+
+      await ensurePaired();
+
+      try {
+        await statusChar.startNotifications();
+        statusChar.addEventListener('characteristicvaluechanged', onStatus);
+      } catch (e) { /* typing still works without status updates */ }
+
+      setConn('Connected', 'on');
+      setStatus('Ready.');
+      $('connectBtn').hidden = true;
+      $('panel').hidden = false;
+    } catch (e) {
+      if (e.name === 'NotFoundError') { setConn('Disconnected'); setStatus(''); }
+      else { setConn('Disconnected'); setStatus(e.message || 'Could not connect', 'bad'); }
+      $('connectBtn').disabled = false;
+    }
+  }
+
+  function onDisconnected() {
+    setConn('Disconnected');
+    $('panel').hidden = true;
+    $('connectBtn').hidden = false;
+    $('connectBtn').disabled = false;
+    $('connectBtn').textContent = 'Reconnect';
+    $('stopBtn').hidden = true;
+    sending = false;
+  }
+
+  function onStatus(ev) {
+    const msg = new TextDecoder().decode(ev.target.value);
+    if (msg === 'TYPING')      { setStatus('Typing…'); $('stopBtn').hidden = false; }
+    else if (msg === 'DONE')   { setStatus('Typed ✓', 'ok'); $('stopBtn').hidden = true; }
+    else if (msg === 'CANCELLED') { setStatus('Stopped.', 'bad'); $('stopBtn').hidden = true; }
+    else if (msg === 'BUSY')   { setStatus('Still typing the last one — wait or stop it.', 'bad'); }
+    else if (msg.startsWith('ERR:')) { setStatus('Error: ' + msg.slice(4), 'bad'); $('stopBtn').hidden = true; }
+  }
+
+  function badChars(s) {
+    return [...new Set([...s].filter(c => !(c === '\t' || c === '\n' || (c >= ' ' && c <= '~'))))];
+  }
+
+  function checkWarn() {
+    const bad = badChars($('user').value + $('secret').value);
+    $('warn').textContent = bad.length
+      ? 'These characters can\'t be typed and will be skipped: ' + bad.map(c => JSON.stringify(c)).join(' ')
+      : '';
+  }
+
+  async function send() {
+    if (sending || !cmdChar) return;
+    const user = $('user').value, secret = $('secret').value;
+    if (!secret && !user) { setStatus('Nothing to type.', 'bad'); return; }
+
+    let payload = user ? user + '\t' + secret : secret;
+    if ($('enter').checked) payload += '\n';
+    payload = [...payload].filter(c => c === '\t' || c === '\n' || (c >= ' ' && c <= '~')).join('');
+    if (payload.length > 2048) { setStatus('Too long (2048 max).', 'bad'); return; }
+
+    const bytes = new TextEncoder().encode(payload);   // ASCII only, so 1 byte per char
+    const speed = parseInt($('speed').value, 10);
+
+    sending = true; $('sendBtn').disabled = true;
+    setStatus('Sending…');
+    try {
+      await write([OP.BEGIN]);
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        await write([OP.DATA, ...bytes.subarray(i, i + CHUNK)]);
+      }
+      await write([OP.COMMIT, speed]);
+      bytes.fill(0);
+      $('user').value = ''; $('secret').value = ''; checkWarn();
+      if (!statusChar || $('status').textContent === 'Sending…') setStatus('Sent.');
+    } catch (e) {
+      setStatus('Send failed: ' + (e.message || e), 'bad');
+    } finally {
+      sending = false; $('sendBtn').disabled = false;
+    }
+  }
+
+  async function stop() {
+    try { await write([OP.CANCEL]); } catch (e) {}
+  }
+
+  async function paste() {
+    try {
+      const t = await navigator.clipboard.readText();
+      $('secret').value = t.replace(/[\r\n]+$/, '');
+      checkWarn();
+      setStatus('Pasted.');
+    } catch (e) {
+      setStatus('Clipboard blocked — long-press the field and paste instead.', 'bad');
+    }
+  }
+
+  $('connectBtn').addEventListener('click', connect);
+  $('sendBtn').addEventListener('click', send);
+  $('stopBtn').addEventListener('click', stop);
+  $('pasteBtn').addEventListener('click', paste);
+  $('user').addEventListener('input', checkWarn);
+  $('secret').addEventListener('input', checkWarn);
+  $('eyeBtn').addEventListener('click', () => {
+    const f = $('secret'), show = f.type === 'password';
+    f.type = show ? 'text' : 'password';
+    $('eyeBtn').textContent = show ? 'Hide' : 'Show';
+  });
+})();
+</script>
+</body>
+</html>
