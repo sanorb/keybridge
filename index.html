@@ -2,12 +2,16 @@
 <!--
   KeyBridge web page
   ==================
-  When you change this file:
-    1. Bump APP_VERSION in the script section below (shown at the bottom of the page).
-    2. Add an entry at the top of this list.
+  index.html and KeyBridge.ino share ONE version number. When either changes:
+    1. Bump APP_VERSION in the script section below AND FW_VERSION in KeyBridge.ino
+       to the same value.
+    2. Add an entry at the top of the history in both files.
+  The page shows both versions and warns if they don't match.
 
   Version history
   ---------------
+  1.4.0  2026-11-01  Shared version number with KeyBridge.ino. Page shows the
+                     firmware version and warns on a mismatch.
   1.3.1  2026-11-01  Added version history and on-page version number.
   1.3.0  2026-10-31  Redesign: "Send clipboard" button, single "Type here" box with
                      Send, "Open IT Glue" button. Removed username/password fields.
@@ -136,7 +140,7 @@
 <script>
 (() => {
   // Bump this on every change and add a line to the version history at the top of the file.
-  const APP_VERSION = '1.3.1';
+  const APP_VERSION = '1.4.0';
 
   // Must match KeyBridge.ino
   const SERVICE = '7b1a0001-5c3e-4d2a-9f4e-2b6c8d0e1f01';
@@ -150,7 +154,14 @@
   let device = null, cmdChar = null, statusChar = null, sending = false;
   let chunkSize = CHUNK;       // shrinks automatically if KeyBridge rejects large writes
 
-  $('version').textContent = 'KeyBridge page v' + APP_VERSION;
+  let fwVersion = null;
+  function showVersions() {
+    let txt = 'Page v' + APP_VERSION + (fwVersion ? ' · Firmware v' + fwVersion : '');
+    if (fwVersion && fwVersion !== APP_VERSION) txt += ' — versions don\'t match, update the older one';
+    $('version').textContent = txt;
+    $('version').style.color = (fwVersion && fwVersion !== APP_VERSION) ? 'var(--warn)' : '';
+  }
+  showVersions();
 
   if (!navigator.bluetooth) {
     $('unsupported').hidden = false;
@@ -220,6 +231,7 @@
         await statusChar.startNotifications();
         statusChar.addEventListener('characteristicvaluechanged', onStatus);
         log('status notifications on');
+        await write([OP.CANCEL]);   // firmware replies "READY:<version>"
       } catch (e) { log(`notifications unavailable: ${e.message}`); }
 
       setConn('Connected', 'on');
@@ -252,6 +264,11 @@
 
   function onStatus(ev) {
     const msg = new TextDecoder().decode(ev.target.value);
+    if (msg.startsWith('READY')) {
+      const v = msg.split(':')[1] || null;   // older firmware sends plain "READY"
+      if (v !== fwVersion) { fwVersion = v || 'pre-1.4'; log(`firmware v${fwVersion}`); showVersions(); }
+      return;
+    }
     if (msg === 'TYPING')         { setStatus('Typing…'); $('stopBtn').hidden = false; }
     else if (msg === 'DONE')      { setStatus('Typed ✓', 'ok'); $('stopBtn').hidden = true; }
     else if (msg === 'CANCELLED') { setStatus('Stopped.', 'bad'); $('stopBtn').hidden = true; }
