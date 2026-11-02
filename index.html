@@ -1,4 +1,24 @@
 <!doctype html>
+<!--
+  KeyBridge web page
+  ==================
+  When you change this file:
+    1. Bump APP_VERSION in the script section below (shown at the bottom of the page).
+    2. Add an entry at the top of this list.
+
+  Version history
+  ---------------
+  1.3.1  2026-11-01  Added version history and on-page version number.
+  1.3.0  2026-10-31  Redesign: "Send clipboard" button, single "Type here" box with
+                     Send, "Open IT Glue" button. Removed username/password fields.
+                     "Press Enter after" now defaults to off.
+  1.2.0  2026-10-31  Fix "unknown GATT error" on send: data chunks shrink and retry
+                     automatically if KeyBridge rejects a write.
+  1.1.0  2026-10-31  Status messages visible while connecting; added Connection log;
+                     clearer pairing prompt; clean retry after a failed connect.
+  1.0.0  2026-10-31  First version: Web Bluetooth connect with PIN pairing,
+                     username/password fields, Enter option, speed setting, Stop.
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -109,10 +129,15 @@
     <summary class="note" style="text-align:left;cursor:pointer">Connection log</summary>
     <pre id="log" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:8px 0 0"></pre>
   </details>
+
+  <p id="version" class="note" style="margin-top:18px;opacity:.7"></p>
 </main>
 
 <script>
 (() => {
+  // Bump this on every change and add a line to the version history at the top of the file.
+  const APP_VERSION = '1.3.1';
+
   // Must match KeyBridge.ino
   const SERVICE = '7b1a0001-5c3e-4d2a-9f4e-2b6c8d0e1f01';
   const CMD     = '7b1a0002-5c3e-4d2a-9f4e-2b6c8d0e1f01';
@@ -124,6 +149,8 @@
   const $ = id => document.getElementById(id);
   let device = null, cmdChar = null, statusChar = null, sending = false;
   let chunkSize = CHUNK;       // shrinks automatically if KeyBridge rejects large writes
+
+  $('version').textContent = 'KeyBridge page v' + APP_VERSION;
 
   if (!navigator.bluetooth) {
     $('unsupported').hidden = false;
@@ -140,6 +167,7 @@
     $('log').textContent += line + '\n';
     console.log(line);
   }
+  log(`page v${APP_VERSION}`);
 
   async function write(bytes) {
     await cmdChar.writeValueWithResponse(new Uint8Array(bytes));
