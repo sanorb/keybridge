@@ -10,6 +10,8 @@
 
   Version history
   ---------------
+  1.5.0  2026-11-01  No-PIN pairing to match firmware 1.5.0; pairing hint updated.
+  1.4.1  2026-11-01  (firmware-only change: debug typing mode)
   1.4.0  2026-11-01  Shared version number with KeyBridge.ino. Page shows the
                      firmware version and warns on a mismatch.
   1.3.1  2026-11-01  Added version history and on-page version number.
@@ -140,7 +142,7 @@
 <script>
 (() => {
   // Bump this on every change and add a line to the version history at the top of the file.
-  const APP_VERSION = '1.4.0';
+  const APP_VERSION = '1.5.0';
 
   // Must match KeyBridge.ino
   const SERVICE = '7b1a0001-5c3e-4d2a-9f4e-2b6c8d0e1f01';
@@ -186,7 +188,7 @@
 
   // ---------- connection & pairing ----------
 
-  // First encrypted write triggers the OS pairing prompt (PIN). Retry while the tech enters it.
+  // First encrypted write triggers pairing (no PIN; some phones show a "Pair?" tap). Retry until it's done.
   async function ensurePaired() {
     const deadline = Date.now() + 60000;
     let attempt = 0;
@@ -198,7 +200,7 @@
         log(`secure write failed: ${e.name}: ${e.message}`);
         if (!device.gatt.connected) throw new Error('KeyBridge dropped the connection during pairing');
         if (Date.now() > deadline) throw new Error('Pairing timed out');
-        setStatus('Enter the KeyBridge PIN if asked — check your notification shade for a pairing request.');
+        setStatus('Pairing… if your phone asks "Pair with KeyBridge?", tap Pair (check the notification shade).');
         await sleep(1500);
       }
     }
