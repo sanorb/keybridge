@@ -10,6 +10,12 @@
 
   Version history
   ---------------
+  1.7.1  2026-11-02  (firmware-only change: compile fix)
+  1.7.0  2026-11-02  AES-256-GCM encryption with a per-phone device key (setup link
+                     #k=<key> or paste under "Device key"), per-connection nonce and
+                     message counter. Still no Bluetooth pairing.
+  1.6.0  2026-11-02  No pairing at all, to match firmware 1.6.0. Connect does one
+                     quick test write instead of waiting for pairing.
   1.5.0  2026-11-01  No-PIN pairing to match firmware 1.5.0; pairing hint updated.
   1.4.1  2026-11-01  (firmware-only change: debug typing mode)
   1.4.0  2026-11-01  Shared version number with KeyBridge.ino. Page shows the
@@ -131,7 +137,19 @@
 
   <p class="note" style="margin-top:16px">Click into the target field on the computer first, then send.</p>
 
-  <details style="margin-top:18px">
+  <details id="keyBox" style="margin-top:18px">
+    <summary class="note" style="text-align:left;cursor:pointer">Device key</summary>
+    <div class="card" style="margin-top:8px">
+      <p id="keyState" class="note" style="text-align:left;margin:0 0 10px"></p>
+      <input id="keyInput" type="password" placeholder="Paste 64-character key" autocomplete="off"
+             autocapitalize="off" autocorrect="off" spellcheck="false"
+             style="width:100%;padding:12px;font-size:15px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace">
+      <div class="gap"></div>
+      <button id="keySave" type="button">Save key</button>
+    </div>
+  </details>
+
+  <details style="margin-top:10px">
     <summary class="note" style="text-align:left;cursor:pointer">Connection log</summary>
     <pre id="log" style="white-space:pre-wrap;font-size:12px;color:var(--muted);margin:8px 0 0"></pre>
   </details>
@@ -142,12 +160,14 @@
 <script>
 (() => {
   // Bump this on every change and add a line to the version history at the top of the file.
-  const APP_VERSION = '1.5.0';
+  const APP_VERSION = '1.7.1';
 
   // Must match KeyBridge.ino
   const SERVICE = '7b1a0001-5c3e-4d2a-9f4e-2b6c8d0e1f01';
   const CMD     = '7b1a0002-5c3e-4d2a-9f4e-2b6c8d0e1f01';
   const STATUS  = '7b1a0003-5c3e-4d2a-9f4e-2b6c8d0e1f01';
+  const NONCE   = '7b1a0004-5c3e-4d2a-9f4e-2b6c8d0e1f01';
+  const KEY_STORE = 'keybridge_key';
   const OP = { BEGIN: 1, DATA: 2, COMMIT: 3, CANCEL: 4 };
   const CHUNK = 19;            // 20-byte default BLE payload minus 1 opcode byte
   const MAX_LEN = 2048;
@@ -186,27 +206,102 @@
     await cmdChar.writeValueWithResponse(new Uint8Array(bytes));
   }
 
-  // ---------- connection & pairing ----------
+  // ---------- device key (stored only on this phone) ----------
 
-  // First encrypted write triggers pairing (no PIN; some phones show a "Pair?" tap). Retry until it's done.
-  async function ensurePaired() {
-    const deadline = Date.now() + 60000;
-    let attempt = 0;
-    while (true) {
-      attempt++;
-      log(`secure write attempt ${attempt}…`);
-      try { await write([OP.CANCEL]); log('secure write OK — paired'); return; }
-      catch (e) {
-        log(`secure write failed: ${e.name}: ${e.message}`);
-        if (!device.gatt.connected) throw new Error('KeyBridge dropped the connection during pairing');
-        if (Date.now() > deadline) throw new Error('Pairing timed out');
-        setStatus('Pairing… if your phone asks "Pair with KeyBridge?", tap Pair (check the notification shade).');
-        await sleep(1500);
-      }
+  let keyHex = null, cryptoKey = null, sessionNonce = null, msgCounter = 0;
+
+  const validKey = s => /^[0-9a-f]{64}$/.test(s);
+  const hexToBytes = h => new Uint8Array(h.match(/../g).map(b => parseInt(b, 16)));
+
+  function loadKey() {
+    try { const k = localStorage.getItem(KEY_STORE); return k && validKey(k) ? k : null; }
+    catch (e) { return null; }
+  }
+  function saveKey(k) {
+    keyHex = k; cryptoKey = null;
+    try { localStorage.setItem(KEY_STORE, k); } catch (e) { log('could not save key in browser storage'); }
+    showKeyState();
+  }
+  function showKeyState() {
+    if (keyHex) {
+      $('keyState').textContent = 'Key saved on this phone (ends …' + keyHex.slice(-4) + '). Paste a new one to replace it.';
+      $('keyState').style.color = '';
+    } else {
+      $('keyState').textContent = 'No key on this phone. Open your KeyBridge setup link, or paste the key here.';
+      $('keyState').style.color = 'var(--warn)';
+      $('keyBox').open = true;
     }
   }
 
+  // Setup link: https://…/keybridge/#k=<64 hex chars>. The part after # never leaves the phone.
+  (() => {
+    const m = location.hash.match(/k=([0-9a-fA-F]{64})/);
+    if (m) {
+      saveKey(m[1].toLowerCase());
+      history.replaceState(null, '', location.pathname + location.search);   // remove key from address bar
+      setStatus('Device key saved. Tap Connect.', 'ok');
+      log('key saved from setup link');
+      return;
+    }
+    keyHex = loadKey();
+    showKeyState();
+  })();
+
+  $('keySave').addEventListener('click', () => {
+    const k = $('keyInput').value.trim().toLowerCase();
+    if (!validKey(k)) { setStatus('That key isn\'t 64 hex characters.', 'bad'); return; }
+    saveKey(k);
+    $('keyInput').value = '';
+    $('keyBox').open = false;
+    setStatus('Device key saved.', 'ok');
+  });
+
+  async function getCryptoKey() {
+    if (!cryptoKey) {
+      const raw = hexToBytes(keyHex);
+      cryptoKey = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt']);
+      raw.fill(0);
+    }
+    return cryptoKey;
+  }
+
+  // counter(4) | iv(12) | AES-GCM(ciphertext | tag), AAD = sessionNonce | counter
+  async function encryptMessage(plain) {
+    msgCounter++;
+    const ctr = new Uint8Array([(msgCounter >>> 24) & 255, (msgCounter >>> 16) & 255,
+                                (msgCounter >>> 8) & 255, msgCounter & 255]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const aad = new Uint8Array(20); aad.set(sessionNonce, 0); aad.set(ctr, 16);
+    const ct = new Uint8Array(await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv, additionalData: aad, tagLength: 128 }, await getCryptoKey(), plain));
+    const out = new Uint8Array(4 + 12 + ct.length);
+    out.set(ctr, 0); out.set(iv, 4); out.set(ct, 16);
+    return out;
+  }
+
+  // ---------- connection ----------
+
+  // No Bluetooth pairing. One test write confirms the link works; retry briefly in case
+  // the connection is still settling.
+  async function checkLink() {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      log(`test write ${attempt}…`);
+      try { await write([OP.CANCEL]); log('test write OK'); return; }
+      catch (e) {
+        log(`test write failed: ${e.name}: ${e.message}`);
+        if (!device.gatt.connected) throw new Error('KeyBridge dropped the connection');
+        await sleep(500);
+      }
+    }
+    throw new Error('KeyBridge is not responding');
+  }
+
   async function connect() {
+    if (!keyHex) {
+      setStatus('Set up the device key first (see "Device key" below).', 'bad');
+      $('keyBox').open = true;
+      return;
+    }
     try {
       if (!device) {
         log('opening device picker');
@@ -225,9 +320,17 @@
       log('service OK; getting characteristics…');
       cmdChar = await svc.getCharacteristic(CMD);
       statusChar = await svc.getCharacteristic(STATUS);
-      log('characteristics OK; pairing…');
+      let nonceChar;
+      try { nonceChar = await svc.getCharacteristic(NONCE); }
+      catch (e) { throw new Error('KeyBridge firmware is too old for this page — flash v' + APP_VERSION); }
+      log('characteristics OK');
 
-      await ensurePaired();
+      await checkLink();
+
+      sessionNonce = new Uint8Array((await nonceChar.readValue()).buffer.slice(0));
+      if (sessionNonce.length !== 16) throw new Error('Bad session nonce from KeyBridge');
+      msgCounter = 0;
+      log('session started');
 
       try {
         await statusChar.startNotifications();
@@ -275,6 +378,10 @@
     else if (msg === 'DONE')      { setStatus('Typed ✓', 'ok'); $('stopBtn').hidden = true; }
     else if (msg === 'CANCELLED') { setStatus('Stopped.', 'bad'); $('stopBtn').hidden = true; }
     else if (msg === 'BUSY')      { setStatus('Still typing the last one — wait or stop it.', 'bad'); }
+    else if (msg === 'ERR:auth') {
+      setStatus('KeyBridge rejected the message — this phone\'s key doesn\'t match the device. Check "Device key".', 'bad');
+      $('stopBtn').hidden = true;
+    }
     else if (msg.startsWith('ERR:')) { setStatus('Error: ' + msg.slice(4), 'bad'); $('stopBtn').hidden = true; }
   }
 
@@ -299,13 +406,19 @@
     if (!payload) { setStatus('Nothing to type.', 'bad'); return false; }
     if (payload.length > MAX_LEN) { setStatus(`Too long (${MAX_LEN} max).`, 'bad'); return false; }
 
-    const bytes = new TextEncoder().encode(payload);   // ASCII only, so 1 byte per char
+    const text = new TextEncoder().encode(payload);   // ASCII only, so 1 byte per char
     const speed = parseInt($('speed').value, 10);
 
     sending = true; setButtons(false);
     setStatus('Sending…');
+    let bytes = null;
     try {
-      log(`send: ${bytes.length} chars, chunk size ${chunkSize}`);
+      const plain = new Uint8Array(1 + text.length);
+      plain[0] = speed; plain.set(text, 1);
+      text.fill(0);
+      bytes = await encryptMessage(plain);
+      plain.fill(0);
+      log(`send: ${payload.length} chars (${bytes.length} bytes encrypted), chunk size ${chunkSize}`);
       await write([OP.BEGIN]);
       let i = 0;
       while (i < bytes.length) {
@@ -322,9 +435,8 @@
           await sleep(200);
         }
       }
-      await write([OP.COMMIT, speed]);
+      await write([OP.COMMIT]);
       log('sent OK');
-      bytes.fill(0);
       if ($('status').textContent === 'Sending…') setStatus('Sent.', 'ok');
       $('warn').textContent = skipped.length
         ? 'Skipped characters that can\'t be typed: ' + skipped.map(c => JSON.stringify(c)).join(' ')
@@ -335,6 +447,7 @@
       setStatus('Send failed: ' + (e.message || e) + ' — open Connection log for details.', 'bad');
       return false;
     } finally {
+      if (bytes) bytes.fill(0);
       sending = false; setButtons(true);
     }
   }
